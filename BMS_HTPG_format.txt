@@ -1,0 +1,56 @@
+#!/bin/bash
+
+# script to remove BMS incompatible characters from HTPG genotype file
+
+#below begins reading the file ($1) by record, the Field separator (FS) for the input file is the ';'
+# we want the Output Field Separator (OFS) to be a tab, hence we convince awk to reassign the value of the record to one where the OFS is a tab
+# by forcing it to rebuild the contents of the record being read.
+# after that it skips the first 7 lines of metadata and save the output in a file specified by $2
+
+#usage sh BMS_format.sh <$1 (HTPG_genotype_file.csv)> <$2 (HTPG_genotype_formatted.csv)> <$3 (HTPG_genotype_r_input.csv)>
+
+awk 'BEGIN { FS = ";" ; OFS = "\t"} {$1=$1}1' $1 | awk ' FNR>7 {print $0}' > $2
+
+
+#now lets get rid of the incompatible characters in the file that are not acceptable in BMS
+
+#we use awk to replace the '?' and 'Uncallable' characters with an empty string and the allele separator from ':' to '/' that is acceptable by BMS
+
+awk 'NR==1{print}NR>1{gsub(/\?|Uncallable/, "");print}' $2 | awk 'NR==1{print}NR>1{gsub(/\:/, "/");print}' > $3
+
+
+###next step uses R functions
+
+##read in the two tables to use for mactching, this files should be in the working directory
+
+##the genotype data set,
+#while reading in data set, ensure that the separators in the marker names have no special characters like '-' or '.', to be safe use '_' if you need to separate words or letters in the column names(marker names)
+genotype_data <- read.csv("/HTPG_genotype_r_input.csv", header = TRUE)
+
+
+###Change the names of the column with the unique idenitifiers from DNA / Assay to SAMPLE_UID
+
+colnames(genotype_data)[1] <- 'SAMPLE_UID'
+colnames(genotype_data) ##check
+
+##read in the sampling list with the sample_UID and the sample_names
+
+bms_sampling_list <- read.csv("/BMS_example_genotyping_sampling_list.csv", header = TRUE)
+
+
+##add a column SAMPLE_NAME to the genotyping dataset by matching the the SAMPLE_UID columns on both files
+genotype_data$SAMPLE_NAME <- sampling_list$SAMPLE_NAME[match(genotype_data$SAMPLE_UID, sampling_list$SAMPLE_UID)]
+
+
+#above adds the sample name column as the last column in the dataset
+
+#reorder the columns so that SAMPLE_NAME starts, then SAMPLE_UID then the rest of the genotype call data
+BMS_genotype_data_file <- genotype_data[,c(ncol(genotype_data),1:((ncol(genotype_data))-1))]
+
+head(BMS_genotype_data_file) ##check
+
+#write out the file as a csv file to be loaded into BMS
+#use row.names as FALSE so that the row names of 1,2,3,4.... are not included in the file
+#use quote as FALSE so that no quote marks are not added to the values in the csv file
+
+write.csv(BMS_genotype_data_file, row.names = FALSE, file = "/BMS_genotype_input_file.csv", quote = FALSE)
